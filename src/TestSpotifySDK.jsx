@@ -1,91 +1,48 @@
-import { useEffect, useState } from "react"
-import { supabase } from "./lib/supabase"
+import { useEffect, useRef, useState } from "react";
+import { loadSpotifySDK } from "./lib/useSpotifySDK";
+import { getSpotifyToken } from "./lib/spotifyAuth";
 
 export default function TestSpotifySDK() {
-  const [player, setPlayer] = useState(null)
+  const [status, setStatus] = useState("Loading Spotify player");
+  const playerRef = useRef(null);
 
   useEffect(() => {
-    const loadToken = async () => {
-      let token = localStorage.getItem("spotify_token")
+    let mounted = true;
 
-      // Fallback: try Supabase session if token missing
-      if (!token) {
-        const { data } = await supabase.auth.getSession()
-        token = data?.session?.provider_token || null
+    loadSpotifySDK(async () => {
+      const token = await getSpotifyToken();
+      if (!mounted) return;
+      if (!token) { setStatus("No Spotify token"); return; }
 
-        if (token) {
-          localStorage.setItem("spotify_token", token)
-          console.log("✅ Retrieved Spotify token from Supabase")
-        }
-      }
-
-      if (!token) {
-        console.warn("⚠️ No Spotify token found, please log in again")
-        return null
-      }
-
-      return token
-    }
-
-    const setupPlayer = async () => {
-      const token = await loadToken()
-      if (!token) return
-
-      const playerInstance = new window.Spotify.Player({
-        name: "My Spotify Player",
+      const player = new window.Spotify.Player({
+        name: "Web Player",
         getOAuthToken: cb => cb(token),
-        volume: 0.5,
-      })
+        volume: 0.5
+      });
 
-      playerInstance.addListener("ready", ({ device_id }) => {
-        console.log("✅ Spotify Player ready with Device ID", device_id)
-      })
+      player.addListener("ready", async ({ device_id }) => {
+        setStatus("Player ready");
+        await fetch("https://api.spotify.com/v1/me/player", {
+          method: "PUT",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ device_ids: [device_id], play: false })
+        });
+      });
 
-      playerInstance.addListener("not_ready", ({ device_id }) => {
-        console.log("⚠️ Device went offline", device_id)
-      })
+      player.addListener("not_ready", () => setStatus("Player not ready"));
+      player.addListener("initialization_error", e => setStatus(e?.message || "Init error"));
+      player.addListener("authentication_error", e => setStatus(e?.message || "Auth error"));
+      player.addListener("account_error", e => setStatus(e?.message || "Account error"));
 
-      playerInstance.addListener("initialization_error", ({ message }) => {
-        console.error("Initialization Error:", message)
-      })
+      player.connect();
+      playerRef.current = player;
+    });
 
-      playerInstance.addListener("authentication_error", ({ message }) => {
-        console.error("Authentication Error:", message)
-      })
+    return () => {
+      mounted = false;
+      if (playerRef.current) playerRef.current.disconnect();
+    };
+  }, []);
 
-      playerInstance.addListener("account_error", ({ message }) => {
-        console.error("Account Error:", message)
-      })
-
-      playerInstance.connect().then(success => {
-        if (success) {
-          console.log("Player connected successfully!")
-          setPlayer(playerInstance)
-        } else {
-          console.error("Player connection failed")
-        }
-      })
-    }
-
-    if (!window.Spotify) {
-      const script = document.createElement("script")
-      script.src = "https://sdk.scdn.co/spotify-player.js"
-      script.async = true
-      script.onload = () => {
-        console.log("✅ Spotify SDK script loaded")
-        setupPlayer()
-      }
-      document.body.appendChild(script)
-    } else {
-      setupPlayer()
-    }
-  }, [])
-
-  return (
-    <div className="flex flex-col items-center justify-center h-screen gap-4">
-      <p className="text-lg font-medium">
-        {player ? "Spotify Player Ready" : "Loading Spotify Player..."}
-      </p>
-    </div>
-  )
+  return <div>{status}</div>;
 }

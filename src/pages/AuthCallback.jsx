@@ -24,7 +24,7 @@ export default function AuthCallback() {
     )
 
     return () => {
-      subscription.subscription.unsubscribe()
+      subscription.unsubscribe()
     }
   }, [navigate])
 

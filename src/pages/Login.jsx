@@ -2,11 +2,11 @@ import { supabase } from "../lib/supabase"
 
 export default function Login() {
   const loginWithSpotify = async () => {
-    const { error } = await supabase.auth.signInWithOAuth({
+    const { data,error } = await supabase.auth.signInWithOAuth({
       provider: "spotify",
       options: {
-        scopes: "streaming user-read-email user-read-private",
-        redirectTo: "http://localhost:5173/auth/callback" // 👈 React route after Supabase finishes
+        scopes: "streaming user-read-email user-read-private user-modify-playback-state user-read-playback-state",
+        redirectTo: "http://127.0.0.1:5173/auth/callback" // 👈 React route after Supabase finishes
       }
     })
     if (error) console.error("Login error:", error.message)
