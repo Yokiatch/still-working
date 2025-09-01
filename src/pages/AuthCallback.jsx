@@ -1,24 +1,30 @@
-import { useEffect } from "react"
+// src/pages/AuthCallback.jsx
+import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { supabase } from "../lib/supabase"
 
 export default function AuthCallback() {
   const navigate = useNavigate()
+  const [status, setStatus] = useState("Processing authentication...")
 
   useEffect(() => {
-    const { data: subscription } = supabase.auth.onAuthStateChange(
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        if (session) {
-          const spotifyToken = session.provider_token
-          if (spotifyToken) {
-            localStorage.setItem("spotify_token", spotifyToken)
-            console.log("✅ Spotify token saved to localStorage:", spotifyToken)
+        console.log("Auth event:", event, "Session:", !!session)
+
+        // Only proceed when we have a valid session
+        if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session) {
+          const token = session.provider_token
+          
+          if (token) {
+            // Store and redirect
+            localStorage.setItem("spotify_token", token)
+            setStatus("✅ Authentication successful! Redirecting…")
+            navigate("/", { replace: true })
           } else {
-            console.warn("⚠️ No Spotify provider_token in session")
+            setStatus("❌ No Spotify token received")
+            navigate("/login", { replace: true })
           }
-          navigate("/")
-        } else {
-          navigate("/login")
         }
       }
     )
@@ -29,8 +35,8 @@ export default function AuthCallback() {
   }, [navigate])
 
   return (
-    <div className="flex items-center justify-center h-screen">
-      <p className="text-lg font-medium">Finishing up authentication...</p>
+    <div className="flex items-center justify-center min-h-screen">
+      <p className="text-lg">{status}</p>
     </div>
   )
 }
