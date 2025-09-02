@@ -6,14 +6,17 @@ import AuthCallback from './pages/AuthCallback';
 import TestSpotifySDK from './TestSpotifySDK';
 import ProtectedRoute from './router/ProtectedRoute';
 import './App.css';
+import Player from "./components/Player";
+
 
 export default function App() {
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-25">
       {/* Navigation Header */}
       <nav className="bg-white shadow-sm border-b p-4">
         <div className="max-w-4xl mx-auto flex justify-between items-center">
           <h1 className="text-xl font-bold">Spotify Music Clone</h1>
+          
           <AuthStatus />
         </div>
       </nav>
@@ -47,6 +50,8 @@ export default function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
+       {/* Persistent Player */}
+      {spotifyToken && <Player token={spotifyToken} />}
     </div>
   );
 }

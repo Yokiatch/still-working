@@ -1,116 +1,149 @@
-import { useSpotifyPlayer } from "../hooks/useSpotifyPlayer"
-import { useState, useEffect } from "react"
-import { Play, Pause, SkipBack, SkipForward, Volume2 } from "lucide-react"
+// src/App.jsx
+import { Routes, Route, Navigate } from "react-router-dom"
+import { useAuth } from "@/contexts/AuthContext"
+import Login from "@/pages/Login"
+import AuthCallback from "@/pages/AuthCallback"
+import TestSpotifySDK from "@/TestSpotifySDK"
+import ProtectedRoute from "@/router/ProtectedRoute"
+import Player from "@/components/Player"
+import "@/App.css"
 
-export default function Player({ token }) {
-  const { player, deviceId, isReady } = useSpotifyPlayer(token)
-  const [isPlaying, setIsPlaying] = useState(false)
-  const [track, setTrack] = useState(null)
-  const [volume, setVolume] = useState(50)
+export default function App() {
+  const { spotifyToken } = useAuth() // ✅ Fix: pull spotifyToken from context
 
-  useEffect(() => {
-    if (!player) return
+  return (
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+      {/* Navigation Header */}
+      <nav className="bg-white shadow-sm border-b p-4">
+        <div className="max-w-4xl mx-auto flex justify-between items-center">
+          <h1 className="text-xl font-bold">Spotify Music Clone</h1>
+          <AuthStatus />
+        </div>
+      </nav>
 
-    player.addListener("player_state_changed", (state) => {
-      if (!state) return
-      setIsPlaying(!state.paused)
-      setTrack(state.track_window.current_track)
-    })
-  }, [player])
+      {/* Main Content */}
+      <main className="flex-1 max-w-4xl mx-auto p-4 pb-32">
+        <Routes>
+          {/* Public Routes */}
+          <Route path="/login" element={<Login />} />
+          <Route path="/auth/callback" element={<AuthCallback />} />
 
-  const handleTogglePlay = async () => {
-    if (!deviceId) return
-    await player.togglePlay()
-  }
+          {/* Protected Routes */}
+          <Route
+            path="/"
+            element={
+              <ProtectedRoute>
+                <HomePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/player"
+            element={
+              <ProtectedRoute>
+                <TestSpotifySDK />
+              </ProtectedRoute>
+            }
+          />
 
-  const handleNext = async () => {
-    if (!deviceId) return
-    await player.nextTrack()
-  }
+          {/* Catch all route */}
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </main>
 
-  const handlePrevious = async () => {
-    if (!deviceId) return
-    await player.previousTrack()
-  }
+      {/* Persistent Player */}
+      {spotifyToken && <Player token={spotifyToken} />}
+    </div>
+  )
+}
 
-  const handleVolumeChange = async (e) => {
-    const newVol = e.target.value
-    setVolume(newVol)
-    if (player) {
-      await player.setVolume(newVol / 100)
+// Home page component
+function HomePage() {
+  const { session, spotifyToken } = useAuth()
+
+  const scrollToPlayer = () => {
+    const playerEl = document.querySelector("#app-player")
+    if (playerEl) {
+      playerEl.scrollIntoView({ behavior: "smooth" })
     }
   }
 
-  const handlePlaySample = async () => {
-    if (!deviceId || !token) return
-    await fetch(
-      `https://api.spotify.com/v1/me/player/play?device_id=${deviceId}`,
-      {
-        method: "PUT",
-        body: JSON.stringify({
-          uris: ["spotify:track:4uLU6hMCjMI75M1A2tKUQC"], // Example track
-        }),
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-      }
-    )
+  return (
+    <div className="space-y-6">
+      <div className="text-center">
+        <h2 className="text-2xl font-bold mb-4">Welcome to Spotify Clone!</h2>
+        <p className="text-gray-600 mb-6">
+          {session?.user ? `Hello, ${session.user.email}!` : "You are logged in"}
+        </p>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="p-6 bg-white rounded-lg shadow">
+          <h3 className="text-lg font-semibold mb-2">Music Player</h3>
+          <p className="text-gray-600 mb-4">
+            Test the Spotify Web Player integration
+          </p>
+          <div className="space-y-2">
+            <p className="text-sm">
+              Token Status:{" "}
+              {spotifyToken ? (
+                <span className="text-green-600">✅ Available</span>
+              ) : (
+                <span className="text-red-600">❌ Missing</span>
+              )}
+            </p>
+            <button
+              onClick={scrollToPlayer}
+              className="inline-block bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600"
+              disabled={!spotifyToken}
+            >
+              Open Player
+            </button>
+          </div>
+        </div>
+
+        <div className="p-6 bg-white rounded-lg shadow">
+          <h3 className="text-lg font-semibold mb-2">Account</h3>
+          <p className="text-gray-600 mb-4">
+            Manage your account and preferences
+          </p>
+          <LogoutButton />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Auth status component
+function AuthStatus() {
+  const { session } = useAuth()
+
+  if (!session?.user) return null
+
+  return (
+    <div className="flex items-center space-x-4">
+      <span className="text-sm text-gray-600">{session.user.email}</span>
+      <LogoutButton />
+    </div>
+  )
+}
+
+// Logout button component
+function LogoutButton() {
+  const { supabase } = useAuth()
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
+    localStorage.removeItem("spotify_token")
+    localStorage.removeItem("spotify_refresh_token")
   }
 
   return (
-    <div className="fixed bottom-0 w-full bg-gray-900 text-white p-4 flex items-center justify-between">
-      {/* Track Info */}
-      <div className="flex items-center space-x-4">
-        {track && (
-          <img
-            src={track.album.images[0]?.url}
-            alt={track.name}
-            className="w-12 h-12 rounded-lg"
-          />
-        )}
-        <div>
-          <p className="text-sm font-semibold">{track?.name || "No track"}</p>
-          <p className="text-xs text-gray-400">
-            {track?.artists?.map((a) => a.name).join(", ") || ""}
-          </p>
-        </div>
-      </div>
-
-      {/* Controls */}
-      <div className="flex items-center space-x-6">
-        <button onClick={handlePrevious}>
-          <SkipBack className="w-6 h-6" />
-        </button>
-        <button
-          onClick={handleTogglePlay}
-          className="p-2 bg-green-500 rounded-full"
-        >
-          {isPlaying ? <Pause className="w-6 h-6" /> : <Play className="w-6 h-6" />}
-        </button>
-        <button onClick={handleNext}>
-          <SkipForward className="w-6 h-6" />
-        </button>
-        <button
-          onClick={handlePlaySample}
-          className="px-3 py-1 bg-green-600 rounded-lg text-sm"
-        >
-          Play Sample
-        </button>
-      </div>
-
-      {/* Volume */}
-      <div className="flex items-center space-x-2 w-32">
-        <Volume2 className="w-5 h-5" />
-        <input
-          type="range"
-          min="0"
-          max="100"
-          value={volume}
-          onChange={handleVolumeChange}
-          className="w-full"
-        />
-      </div>
-    </div>
+    <button
+      onClick={handleLogout}
+      className="text-sm bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600"
+    >
+      Logout
+    </button>
   )
 }
