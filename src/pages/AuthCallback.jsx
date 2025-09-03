@@ -12,13 +12,9 @@ export default function AuthCallback() {
       async (event, session) => {
         console.log("Auth event:", event, "Session:", !!session)
 
-        // Only proceed when we have a valid session
-        if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session) {
-          const token = session.provider_token
-          
-          if (token) {
-            // Store and redirect
-            localStorage.setItem("spotify_token", token)
+        if ((event === "SIGNED_IN" || event === "INITIAL_SESSION") && session) {
+          if (session.provider_token) {
+            // ✅ AuthContext will pick this up automatically
             setStatus("✅ Authentication successful! Redirecting…")
             navigate("/", { replace: true })
           } else {
