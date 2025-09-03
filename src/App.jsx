@@ -58,7 +58,8 @@ export default function App() {
 
 // Home page component
 function HomePage() {
-  const { session, spotifyToken } = useAuth();
+  const auth = useAuth()
+  const spotifyToken = auth?.spotifyToken
 
   return (
     <div className="space-y-6">

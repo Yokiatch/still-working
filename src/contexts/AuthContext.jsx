@@ -13,8 +13,13 @@ export function AuthProvider({ children }) {
       if (data?.session) {
         setSession(data.session)
 
-        // Spotify access token from Supabase
-        setSpotifyToken(data.session.provider_token)
+        // ✅ safer token extraction
+        const token =
+          data.session.provider_token ||
+          data.session.user?.identities?.[0]?.identity_data?.access_token ||
+          null
+
+        setSpotifyToken(token)
       }
     }
 
@@ -22,7 +27,13 @@ export function AuthProvider({ children }) {
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, s) => {
       setSession(s)
-      setSpotifyToken(s?.provider_token || null)
+
+      const token =
+        s?.provider_token ||
+        s?.user?.identities?.[0]?.identity_data?.access_token ||
+        null
+
+      setSpotifyToken(token)
     })
 
     return () => {
