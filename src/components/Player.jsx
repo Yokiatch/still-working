@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { loadSpotifySDK } from '../lib/useSpotifySDK';
-import { getSpotifyToken } from '../lib/spotifyAuth';
+import { loadSpotifySDK } from '../lib/useSpotifySDK';  // Ensure this properly loads the SDK script
 import { useAuth } from '../contexts/AuthContext';
 
 export default function Player() {
@@ -9,227 +8,182 @@ export default function Player() {
     isPlaying: false,
     currentTrack: null,
     position: 0,
-    duration: 0
+    duration: 0,
   });
   const [deviceId, setDeviceId] = useState('');
   const [error, setError] = useState(null);
   const playerRef = useRef(null);
-  const { spotifyToken } = useAuth();
+  const { token: spotifyToken } = useAuth();
 
-  // Setup Player function that's causing the error
+  // Transfer playback to this device when ready
+  const transferPlayback = useCallback(
+    async (deviceId, token) => {
+      try {
+        const response = await fetch('https://api.spotify.com/v1/me/player', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            device_ids: [deviceId],
+            play: false,
+          }),
+        });
+
+        if (!response.ok) {
+          console.warn('Failed to transfer playback:', response.status);
+        } else {
+          console.log('✅ Playback transferred successfully');
+        }
+      } catch (error) {
+        console.error('❌ Error transferring playback:', error);
+      }
+    },
+    []
+  );
+
   const setupPlayer = useCallback(async () => {
-    console.log('🎵 Setting up Spotify Player...');
-    
     try {
-      // Wait for token
-      const token = await getSpotifyToken();
-      if (!token) {
-        throw new Error('No Spotify token available');
-      }
+      if (!spotifyToken) throw new Error('No Spotify token available');
+      if (!window.Spotify || !window.Spotify.Player)
+        throw new Error('Spotify SDK not loaded');
 
-      // Check if Spotify SDK is loaded
-      if (!window.Spotify || !window.Spotify.Player) {
-        throw new Error('Spotify SDK not loaded. window.Spotify.Player is undefined');
-      }
-
-      console.log('✅ Spotify SDK loaded, creating player...');
-
-      // Create the player instance
       const player = new window.Spotify.Player({
         name: 'Spotify Clone Player',
         getOAuthToken: (cb) => {
-          console.log('🔑 Spotify SDK requesting token...');
-          cb(token);
+          cb(spotifyToken);
         },
-        volume: 0.5
+        volume: 0.5,
       });
 
-      // Store player reference
       playerRef.current = player;
 
-      // Set up event listeners
       player.addListener('ready', ({ device_id }) => {
-        console.log('✅ Ready with Device ID', device_id);
         setDeviceId(device_id);
-        setPlayerState(prev => ({ ...prev, isReady: true }));
+        setPlayerState((prev) => ({ ...prev, isReady: true }));
         setError(null);
-        
-        // Transfer playback to this device
-        transferPlayback(device_id, token);
+        transferPlayback(device_id, spotifyToken);
       });
 
       player.addListener('not_ready', ({ device_id }) => {
-        console.log('❌ Device ID has gone offline', device_id);
-        setPlayerState(prev => ({ ...prev, isReady: false }));
+        setPlayerState((prev) => ({ ...prev, isReady: false }));
       });
 
       player.addListener('player_state_changed', (state) => {
         if (!state) return;
-        
-        setPlayerState(prev => ({
-          ...prev,
+        setPlayerState({
           isPlaying: !state.paused,
           currentTrack: state.track_window.current_track,
           position: state.position,
-          duration: state.duration
-        }));
+          duration: state.duration,
+          isReady: playerState.isReady,
+        });
       });
 
-      // Error listeners
       player.addListener('initialization_error', ({ message }) => {
-        console.error('❌ Initialization error:', message);
         setError(`Initialization error: ${message}`);
       });
 
       player.addListener('authentication_error', ({ message }) => {
-        console.error('❌ Authentication error:', message);
         setError(`Authentication error: ${message}`);
       });
 
       player.addListener('account_error', ({ message }) => {
-        console.error('❌ Account error:', message);
         setError(`Account error: ${message}`);
       });
 
-      // Connect to Spotify
       const connected = await player.connect();
-      if (connected) {
-        console.log('✅ Successfully connected to Spotify');
-      } else {
-        throw new Error('Failed to connect to Spotify');
-      }
-
-    } catch (error) {
-      console.error('❌ Error setting up player:', error);
-      setError(error.message);
+      if (!connected) throw new Error('Failed to connect to Spotify');
+    } catch (err) {
+      setError(err.message || 'Error setting up Spotify Player');
+      console.error('❌ Error setting up player:', err);
     }
-  }, [spotifyToken]);
+  }, [spotifyToken, transferPlayback, playerState.isReady]);
 
-  // Transfer playback to this device
-  const transferPlayback = async (deviceId, token) => {
-    try {
-      const response = await fetch('https://api.spotify.com/v1/me/player', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          device_ids: [deviceId],
-          play: false
-        })
-      });
-
-      if (!response.ok) {
-        console.warn('Failed to transfer playback:', response.status);
-      } else {
-        console.log('✅ Playback transferred successfully');
-      }
-    } catch (error) {
-      console.error('❌ Error transferring playback:', error);
-    }
-  };
-
-  // Initialize player when component mounts
+  // Initialize player
   useEffect(() => {
     if (!spotifyToken) {
-      console.warn('⚠️ No Spotify token available');
+      setError('No Spotify token available');
       return;
     }
 
     let mounted = true;
 
-    const initPlayer = async () => {
+    const loadAndSetup = async () => {
       try {
-        // Load Spotify SDK first
         await new Promise((resolve, reject) => {
           loadSpotifySDK(() => {
             if (mounted) resolve();
           });
-          
-          // Timeout after 10 seconds
           setTimeout(() => {
             if (mounted) reject(new Error('Spotify SDK load timeout'));
           }, 10000);
         });
 
-        // Setup player after SDK is loaded
         if (mounted) {
           await setupPlayer();
         }
-      } catch (error) {
-        if (mounted) {
-          console.error('❌ Failed to initialize player:', error);
-          setError(`Failed to initialize: ${error.message}`);
-        }
+      } catch (err) {
+        if (mounted) setError(`Failed to initialize: ${err.message}`);
       }
     };
 
-    initPlayer();
+    loadAndSetup();
 
-    // Cleanup function
     return () => {
       mounted = false;
       if (playerRef.current) {
-        console.log('🔌 Disconnecting player...');
         playerRef.current.disconnect();
         playerRef.current = null;
       }
     };
   }, [spotifyToken, setupPlayer]);
 
-  // Play/Pause toggle
+  // Playback controls wrapped with useCallback
   const togglePlay = useCallback(async () => {
     if (!playerRef.current) return;
-
     try {
       await playerRef.current.togglePlay();
-    } catch (error) {
-      console.error('❌ Error toggling playback:', error);
+    } catch (err) {
+      console.error('❌ Error toggling playback:', err);
     }
   }, []);
 
-  // Next track
   const nextTrack = useCallback(async () => {
     if (!playerRef.current) return;
-
     try {
       await playerRef.current.nextTrack();
-    } catch (error) {
-      console.error('❌ Error skipping track:', error);
+    } catch (err) {
+      console.error('❌ Error skipping track:', err);
     }
   }, []);
 
-  // Previous track
   const previousTrack = useCallback(async () => {
     if (!playerRef.current) return;
-
     try {
       await playerRef.current.previousTrack();
-    } catch (error) {
-      console.error('❌ Error going to previous track:', error);
+    } catch (err) {
+      console.error('❌ Error going to previous track:', err);
     }
   }, []);
 
   if (!spotifyToken) {
     return (
-      <div id="app-player" className="fixed bottom-0 left-0 right-0 bg-gray-900 text-white p-4">
-        <div className="text-center">
-          <p>❌ No Spotify token - Please login first</p>
-        </div>
+      <div className="fixed bottom-0 left-0 right-0 bg-gray-900 text-white p-4 text-center">
+        <p>❌ No Spotify token - Please login first</p>
       </div>
     );
   }
 
   return (
-    <div id="app-player" className="fixed bottom-0 left-0 right-0 bg-gray-900 text-white p-4 border-t border-gray-700">
+    <div className="fixed bottom-0 left-0 right-0 bg-gray-900 text-white p-4 border-t border-gray-700">
       <div className="max-w-screen-xl mx-auto">
-        
-        {/* Error State */}
+        {/* Error */}
         {error && (
           <div className="mb-4 p-3 bg-red-600 rounded text-center">
             <p>❌ {error}</p>
-            <button 
+            <button
               onClick={setupPlayer}
               className="mt-2 px-4 py-1 bg-red-800 rounded hover:bg-red-700"
             >
@@ -238,34 +192,31 @@ export default function Player() {
           </div>
         )}
 
-        {/* Loading State */}
+        {/* Loading */}
         {!playerState.isReady && !error && (
           <div className="text-center">
             <p>🔄 Loading Spotify Player...</p>
           </div>
         )}
 
-        {/* Player Controls */}
+        {/* Player controls */}
         {playerState.isReady && (
           <div className="flex items-center justify-between">
-            
-            {/* Current Track Info */}
+            {/* Current Track */}
             <div className="flex-1 min-w-0">
               {playerState.currentTrack ? (
                 <div className="flex items-center space-x-3">
                   {playerState.currentTrack.album.images[0] && (
-                    <img 
+                    <img
                       src={playerState.currentTrack.album.images[0].url}
                       alt={playerState.currentTrack.album.name}
                       className="w-12 h-12 rounded"
                     />
                   )}
                   <div className="min-w-0">
-                    <p className="font-semibold truncate">
-                      {playerState.currentTrack.name}
-                    </p>
+                    <p className="font-semibold truncate">{playerState.currentTrack.name}</p>
                     <p className="text-gray-400 text-sm truncate">
-                      {playerState.currentTrack.artists.map(a => a.name).join(', ')}
+                      {playerState.currentTrack.artists.map((a) => a.name).join(', ')}
                     </p>
                   </div>
                 </div>
@@ -276,26 +227,27 @@ export default function Player() {
 
             {/* Controls */}
             <div className="flex items-center space-x-4 mx-6">
-              <button 
+              <button
                 onClick={previousTrack}
                 className="p-2 hover:bg-gray-700 rounded-full transition-colors"
                 disabled={!playerState.isReady}
+                aria-label="Previous track"
               >
                 ⏮️
               </button>
-              
-              <button 
+              <button
                 onClick={togglePlay}
                 className="p-3 bg-white text-black rounded-full hover:scale-105 transition-transform"
                 disabled={!playerState.isReady}
+                aria-label={playerState.isPlaying ? 'Pause' : 'Play'}
               >
                 {playerState.isPlaying ? '⏸️' : '▶️'}
               </button>
-              
-              <button 
+              <button
                 onClick={nextTrack}
                 className="p-2 hover:bg-gray-700 rounded-full transition-colors"
                 disabled={!playerState.isReady}
+                aria-label="Next track"
               >
                 ⏭️
               </button>
@@ -307,34 +259,33 @@ export default function Player() {
                 <div className="flex items-center space-x-2">
                   <span className="text-xs text-gray-400">
                     {Math.floor(playerState.position / 1000 / 60)}:
-                    {String(Math.floor(playerState.position / 1000) % 60).padStart(2, '0')}
+                    {String(Math.floor((playerState.position / 1000) % 60)).padStart(2, '0')}
                   </span>
                   <div className="flex-1 bg-gray-600 rounded-full h-1">
-                    <div 
-                      className="bg-white rounded-full h-1 transition-all duration-1000"
-                      style={{ 
-                        width: `${playerState.duration > 0 ? (playerState.position / playerState.duration) * 100 : 0}%` 
+                    <div
+                      className="bg-white rounded-full h-1 transition-all duration-500"
+                      style={{
+                        width:
+                          playerState.duration > 0
+                            ? `${(playerState.position / playerState.duration) * 100}%`
+                            : '0%',
                       }}
                     />
                   </div>
                   <span className="text-xs text-gray-400">
                     {Math.floor(playerState.duration / 1000 / 60)}:
-                    {String(Math.floor(playerState.duration / 1000) % 60).padStart(2, '0')}
+                    {String(Math.floor((playerState.duration / 1000) % 60)).padStart(2, '0')}
                   </span>
                 </div>
               )}
             </div>
-            
           </div>
         )}
 
-        {/* Device Info */}
+        {/* Device ID info */}
         {deviceId && (
-          <div className="mt-2 text-xs text-gray-500 text-center">
-            Device ID: {deviceId}
-          </div>
+          <div className="mt-2 text-xs text-gray-500 text-center">Device ID: {deviceId}</div>
         )}
-        
       </div>
     </div>
   );
