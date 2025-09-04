@@ -1,6 +1,8 @@
+/* src/index.css */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-html, body, #root { height: 100%; }
-body { background: #121212; color: #fff; }
+body {
+  font-family: system-ui, sans-serif;
+}
