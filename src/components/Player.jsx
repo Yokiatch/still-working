@@ -1,114 +1,110 @@
-import { useEffect, useState } from "react"
-import useSpotifyPlayer from "../hooks/useSpotifyPlayer"
-import { Play, Pause, SkipBack, SkipForward, Volume2 } from "lucide-react"
+// src/components/Player.jsx
+import React, { useEffect, useState } from 'react';
+import useSpotifyPlayer from '../hooks/useSpotifyPlayer';
+import { Play, Pause, SkipBack, SkipForward, Volume2 } from 'lucide-react';
+
+function format(ms = 0) {
+  const s = Math.floor(ms / 1000);
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return `${m}:${sec < 10 ? '0' : ''}${sec}`;
+}
 
 export default function Player() {
-  const { player, deviceId, isReady } = useSpotifyPlayer()
-  const [track, setTrack] = useState(null)
-  const [paused, setPaused] = useState(true)
-  const [position, setPosition] = useState(0)
-  const [duration, setDuration] = useState(0)
-  const [volume, setVolume] = useState(0.5)
+  const {
+    deviceId,
+    isReady,
+    state,
+    play,
+    pause,
+    next,
+    previous,
+    setVolume,
+    transferPlayback,
+  } = useSpotifyPlayer();
+
+  const [localVolume, setLocalVolume] = useState(0.5);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [position, setPosition] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const currentTrack = state?.track_window?.current_track;
 
   useEffect(() => {
-    if (!player) return
+    setIsPlaying(state ? !state.paused : false);
+    setPosition(state?.position || 0);
+    setDuration(state?.duration || 0);
+  }, [state]);
 
-    player.addListener("player_state_changed", (state) => {
-      if (!state) return
-      setTrack(state.track_window.current_track)
-      setPaused(state.paused)
-      setPosition(state.position)
-      setDuration(state.duration)
-    })
-
-    player.getVolume().then(v => setVolume(v))
-  }, [player])
+  useEffect(() => {
+    // Make sure the web player device is active; if device exists, transfer playback to it (non-destructive)
+    if (deviceId && isReady) {
+      transferPlayback(deviceId, false).catch(() => {});
+    }
+  }, [deviceId, isReady, transferPlayback]);
 
   const togglePlay = async () => {
-    if (player) await player.togglePlay()
-  }
+    try {
+      if (isPlaying) {
+        await pause();
+      } else {
+        await play(); // resume current context
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
-  const nextTrack = async () => {
-    if (player) await player.nextTrack()
-  }
-
-  const previousTrack = async () => {
-    if (player) await player.previousTrack()
-  }
-
-  const changeVolume = async (e) => {
-    const v = parseFloat(e.target.value)
-    setVolume(v)
-    if (player) await player.setVolume(v)
-  }
-
-  const formatTime = (ms) => {
-    const totalSeconds = Math.floor(ms / 1000)
-    const minutes = Math.floor(totalSeconds / 60)
-    const seconds = totalSeconds % 60
-    return `${minutes}:${seconds < 10 ? "0" : ""}${seconds}`
-  }
+  const onVolume = async (e) => {
+    const v = Number(e.target.value);
+    setLocalVolume(v);
+    try {
+      await setVolume(v);
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   return (
     <div className="w-full h-24 bg-[#181818] border-t border-gray-800 flex items-center justify-between px-4 text-white">
-      {/* Left: Track Info */}
       <div className="flex items-center gap-4 w-1/4">
-        {track?.album?.images?.[0] && (
-          <img
-            src={track.album.images[0].url}
-            alt="album"
-            className="w-14 h-14 rounded"
-          />
-        )}
-        <div>
-          <p className="font-medium">{track?.name || "No track"}</p>
-          <p className="text-sm text-gray-400">
-            {track?.artists?.map((a) => a.name).join(", ")}
-          </p>
+        <div className="w-14 h-14 bg-gray-900 rounded overflow-hidden">
+          {currentTrack?.album?.images?.[0] ? (
+            <img src={currentTrack.album.images[0].url} alt="" className="w-full h-full object-cover" />
+          ) : null}
+        </div>
+        <div className="truncate">
+          <div className="font-medium truncate">{currentTrack?.name || 'Not Playing'}</div>
+          <div className="text-xs text-white/60 truncate">
+            {currentTrack?.artists?.map(a => a.name).join(', ') || ''}
+          </div>
         </div>
       </div>
 
-      {/* Center: Controls */}
       <div className="flex flex-col items-center gap-2 w-2/4">
         <div className="flex items-center gap-6">
-          <button onClick={previousTrack}>
-            <SkipBack size={22} />
+          <button onClick={previous}><SkipBack size={20} /></button>
+          <button onClick={togglePlay} className="w-10 h-10 flex items-center justify-center bg-white text-black rounded-full">
+            {isPlaying ? <Pause size={18} /> : <Play size={18} />}
           </button>
-          <button
-            onClick={togglePlay}
-            className="w-10 h-10 flex items-center justify-center bg-white text-black rounded-full"
-          >
-            {paused ? <Play size={22} fill="black" /> : <Pause size={22} />}
-          </button>
-          <button onClick={nextTrack}>
-            <SkipForward size={22} />
-          </button>
+          <button onClick={next}><SkipForward size={20} /></button>
         </div>
-        <div className="flex items-center gap-2 w-full">
-          <span className="text-xs">{formatTime(position)}</span>
-          <div className="relative flex-1 h-1 bg-gray-600 rounded">
+
+        <div className="flex items-center gap-2 w-full mt-1">
+          <div className="text-xs text-white/60">{format(position)}</div>
+          <div className="relative flex-1 h-1 bg-gray-700 rounded">
             <div
-              className="absolute top-0 left-0 h-1 bg-green-500 rounded"
-              style={{ width: `${(position / duration) * 100 || 0}%` }}
+              className="absolute top-0 left-0 h-1 bg-[#1DB954] rounded"
+              style={{ width: duration ? `${(position / duration) * 100}%` : '0%' }}
             />
           </div>
-          <span className="text-xs">{formatTime(duration)}</span>
+          <div className="text-xs text-white/60">{format(duration)}</div>
         </div>
       </div>
 
-      {/* Right: Volume */}
-      <div className="flex items-center gap-2 w-1/4 justify-end">
-        <Volume2 size={20} />
-        <input
-          type="range"
-          min={0}
-          max={1}
-          step={0.01}
-          value={volume}
-          onChange={changeVolume}
-          className="w-24"
-        />
+      <div className="flex items-center gap-3 w-1/4 justify-end">
+        <Volume2 size={18} />
+        <input type="range" min={0} max={1} step={0.01} value={localVolume} onChange={onVolume} className="w-28" />
       </div>
     </div>
-  )
+  );
 }

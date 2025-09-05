@@ -5,50 +5,96 @@ const BASE = 'https://api.spotify.com/v1';
 
 async function call(endpoint, opts = {}) {
   const token = await getSpotifyToken();
-  if (!token) throw new Error('No token');
+  if (!token) throw new Error('No Spotify token available');
   const res = await fetch(`${BASE}${endpoint}`, {
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
     ...opts,
   });
-  if (!res.ok) throw new Error(`API ${res.status}`);
+  if (res.status === 204) return null; // no content
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Spotify API ${res.status} ${text}`);
+  }
   return res.json();
 }
 
-export function searchTracks(query) {
-  return call(`/search?q=${encodeURIComponent(query)}&type=track&limit=20`)
-    .then(data => data.tracks.items);
-}
-
-export function getUserPlaylists() {
-  return call('/me/playlists').then(data => data.items);
-}
-
-export function getPlaylistTracks(id) {
-  return call(`/playlists/${id}/tracks`)
-    .then(data => data.items.map(i => i.track));
-}
-
-export function playTrack(deviceId, uris) {
-  return call('/me/player/play', {
+export async function transferPlayback(device_id, play = true) {
+  return call('/me/player', {
     method: 'PUT',
-    body: JSON.stringify({ device_ids: [deviceId], uris }),
+    body: JSON.stringify({ device_ids: [device_id], play }),
   });
 }
 
-export function getCurrentPlayback() {
-  return call('/me/player');
+export async function play({ device_id, uris, context_uri, position_ms = 0, offset = 0 } = {}) {
+  const qs = device_id ? `?device_id=${encodeURIComponent(device_id)}` : '';
+  const body = {};
+  if (uris) body.uris = Array.isArray(uris) ? uris : [uris];
+  if (context_uri) body.context_uri = context_uri;
+  if (position_ms) body.position_ms = position_ms;
+  if (offset) body.offset = typeof offset === 'number' ? { position: offset } : offset;
+  return call(`/me/player/play${qs}`, {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  });
 }
 
-export function getFeaturedPlaylists() {
-  return call(
-    '/browse/featured-playlists?country=from_token&limit=20'
-  ).then(data => data.playlists.items);
+export async function pause(device_id) {
+  const qs = device_id ? `?device_id=${encodeURIComponent(device_id)}` : '';
+  return call(`/me/player/pause${qs}`, { method: 'PUT' });
 }
 
-export function getUserTopTracks() {
-  return call('/me/top/tracks').then(data => data.items);
+export async function next(device_id) {
+  const qs = device_id ? `?device_id=${encodeURIComponent(device_id)}` : '';
+  return call(`/me/player/next${qs}`, { method: 'POST' });
 }
 
-export function getRecentlyPlayed() {
-  return call('/me/player/recently-played').then(data => data.items.map(i => i.track));
+export async function previous(device_id) {
+  const qs = device_id ? `?device_id=${encodeURIComponent(device_id)}` : '';
+  return call(`/me/player/previous${qs}`, { method: 'POST' });
+}
+
+export async function seek(position_ms, device_id) {
+  const qs = device_id ? `?position_ms=${position_ms}&device_id=${encodeURIComponent(device_id)}` : `?position_ms=${position_ms}`;
+  return call(`/me/player/seek${qs}`, { method: 'PUT' });
+}
+
+export async function setVolume(volume, device_id) {
+  // volume between 0-100 (Spotify API)
+  const vol = Math.round(Math.min(100, Math.max(0, volume * 100)));
+  const qs = device_id ? `?volume_percent=${vol}&device_id=${encodeURIComponent(device_id)}` : `?volume_percent=${vol}`;
+  return call(`/me/player/volume${qs}`, { method: 'PUT' });
+}
+
+export async function searchTracks(q, limit = 20) {
+  const qs = `/search?q=${encodeURIComponent(q)}&type=track&limit=${limit}`;
+  const data = await call(qs);
+  return data.tracks.items;
+}
+
+export async function getUserPlaylists(limit = 30) {
+  const data = await call(`/me/playlists?limit=${limit}`);
+  return data.items;
+}
+
+export async function getPlaylistTracks(playlistId, limit = 100) {
+  const data = await call(`/playlists/${playlistId}/tracks?limit=${limit}`);
+  return data.items;
+}
+
+export async function getFeaturedPlaylists() {
+  const data = await call('/browse/featured-playlists?country=from_token&limit=20');
+  return data.playlists.items;
+}
+
+export async function getUserTopTracks() {
+  const data = await call('/me/top/tracks');
+  return data.items;
+}
+
+export async function getRecentlyPlayed() {
+  const data = await call('/me/player/recently-played');
+  return data.items.map(i => i.track);
 }

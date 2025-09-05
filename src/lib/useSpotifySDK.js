@@ -1,33 +1,48 @@
 // src/lib/useSpotifySDK.js
-let sdkLoading = false, sdkLoaded = false, callbacks = [];
+let sdkLoading = false;
+let sdkLoaded = false;
+let waiters = [];
 
-export function loadSpotifySDK(onReady) {
-  return new Promise((res, rej) => {
+export function loadSpotifySDK() {
+  return new Promise((resolve, reject) => {
     if (sdkLoaded && window.Spotify?.Player) {
-      onReady(); return res();
+      resolve();
+      return;
     }
-    callbacks.push({ onReady, res, rej });
+
+    waiters.push({ resolve, reject });
+
     if (sdkLoading) return;
     sdkLoading = true;
 
-    const s = document.createElement('script');
-    s.id = 'spotify-sdk';
-    s.src = 'https://sdk.scdn.co/spotify-player.js';
-    s.async = true;
-    s.onerror = () => {
-      callbacks.forEach(c => c.rej(new Error('SDK load failed')));
-      callbacks = [];
+    const script = document.createElement('script');
+    script.id = 'spotify-sdk';
+    script.src = 'https://sdk.scdn.co/spotify-player.js';
+    script.async = true;
+    script.onload = () => {
+      // real ready event comes via window.onSpotifyWebPlaybackSDKReady
     };
+    script.onerror = (e) => {
+      sdkLoading = false;
+      waiters.forEach(w => w.reject(new Error('Spotify SDK failed to load')));
+      waiters = [];
+    };
+
     window.onSpotifyWebPlaybackSDKReady = () => {
-      sdkLoaded = true; sdkLoading = false;
-      callbacks.forEach(c => { c.onReady(); c.res(); });
-      callbacks = [];
+      sdkLoaded = true;
+      sdkLoading = false;
+      waiters.forEach(w => w.resolve());
+      waiters = [];
     };
-    document.head.appendChild(s);
+
+    document.head.appendChild(script);
+
+    // fail-safe timeout
     setTimeout(() => {
       if (!sdkLoaded) {
-        callbacks.forEach(c => c.rej(new Error('SDK timeout')));
-        callbacks = [];
+        waiters.forEach(w => w.reject(new Error('Spotify SDK load timeout')));
+        waiters = [];
+        sdkLoading = false;
       }
     }, 15000);
   });

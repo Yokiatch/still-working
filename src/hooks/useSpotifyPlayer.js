@@ -1,98 +1,73 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState } from "react"
 
-export function useSpotifyPlayer(token) {
-  const [player, setPlayer] = useState(null);
-  const [deviceId, setDeviceId] = useState(null);
-  const [isReady, setIsReady] = useState(false);
+export default function useSpotifyPlayer() {
+  const [player, setPlayer] = useState(null)
+  const [deviceId, setDeviceId] = useState(null)
+  const [isReady, setIsReady] = useState(false)
 
   useEffect(() => {
-    if (!token) return;
+    const token = localStorage.getItem("spotifyToken")
 
-    // Dynamically load Spotify SDK script only once
-    if (!document.getElementById('spotify-sdk')) {
-      const script = document.createElement('script');
-      script.id = 'spotify-sdk';
-      script.src = 'https://sdk.scdn.co/spotify-player.js';
-      script.async = true;
-      document.body.appendChild(script);
+    if (!token) {
+      console.warn("⚠️ No Spotify token found. Please login first.")
+      return
     }
 
-    let playerInstance = null;
-    let isMounted = true;
-
-    window.onSpotifyWebPlaybackSDKReady = () => {
-      if (!isMounted) return;
-
-      playerInstance = new window.Spotify.Player({
-        name: 'Spotify Clone Player',
-        getOAuthToken: (cb) => {
-          cb(token);
-        },
-        volume: 0.5,
-      });
-
-      // Error handlers
-      playerInstance.addListener('initialization_error', ({ message }) =>
-        console.error('Initialization error:', message)
-      );
-      playerInstance.addListener('authentication_error', ({ message }) =>
-        console.error('Authentication error:', message)
-      );
-      playerInstance.addListener('account_error', ({ message }) =>
-        console.error('Account error:', message)
-      );
-      playerInstance.addListener('playback_error', ({ message }) =>
-        console.error('Playback error:', message)
-      );
-
-      // Ready event
-      playerInstance.addListener('ready', async ({ device_id }) => {
-        console.log('🎧 Ready with Device ID:', device_id);
-        setDeviceId(device_id);
-        setIsReady(true);
-
-        // Transfer playback to this device
-        try {
-          const res = await fetch('https://api.spotify.com/v1/me/player', {
-            method: 'PUT',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify({ device_ids: [device_id], play: false }),
-          });
-
-          if (!res.ok) {
-            console.error('❌ Failed to transfer playback:', res.status, res.statusText);
-          } else {
-            console.log('✅ Playback transferred to this device');
-          }
-        } catch (err) {
-          console.error('❌ Error transferring playback:', err);
-        }
-      });
-
-      playerInstance.connect().then((success) => {
-        if (success) {
-          console.log('Spotify Player connected');
-          setPlayer(playerInstance);
-        } else {
-          console.error('Failed to connect Spotify Player');
-        }
-      });
-    };
-
-    // Cleanup
-    return () => {
-      isMounted = false;
-      if (playerInstance) {
-        playerInstance.disconnect();
+    const init = () => {
+      if (!window.Spotify) {
+        console.error("Spotify SDK not loaded.")
+        return
       }
-      setPlayer(null);
-      setDeviceId(null);
-      setIsReady(false);
-    };
-  }, [token]);
 
-  return { player, deviceId, isReady };
+      const newPlayer = new window.Spotify.Player({
+        name: "My Spotify Clone",
+        getOAuthToken: cb => cb(token),
+        volume: 0.5,
+      })
+
+      // --- Player Event Listeners ---
+      newPlayer.addListener("ready", ({ device_id }) => {
+        console.log("✅ Ready with Device ID", device_id)
+        setDeviceId(device_id)
+        setIsReady(true)
+      })
+
+      newPlayer.addListener("not_ready", ({ device_id }) => {
+        console.warn("⚠️ Device ID has gone offline", device_id)
+        setIsReady(false)
+      })
+
+      newPlayer.addListener("initialization_error", ({ message }) => {
+        console.error("❌ Initialization Error:", message)
+      })
+
+      newPlayer.addListener("authentication_error", ({ message }) => {
+        console.error("❌ Authentication Error:", message)
+        localStorage.removeItem("spotifyToken") // token invalid, clear it
+      })
+
+      newPlayer.addListener("account_error", ({ message }) => {
+        console.error("❌ Account Error:", message)
+      })
+
+      newPlayer.connect()
+      setPlayer(newPlayer)
+    }
+
+    // If SDK script isn’t loaded yet, wait
+    if (!window.Spotify) {
+      window.onSpotifyWebPlaybackSDKReady = () => {
+        init()
+      }
+    } else {
+      init()
+    }
+
+    // Cleanup on unmount
+    return () => {
+      if (player) player.disconnect()
+    }
+  }, [])
+
+  return { player, deviceId, isReady }
 }
