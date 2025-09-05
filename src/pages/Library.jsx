@@ -1,28 +1,24 @@
-import { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
-import { useAuth } from '../contexts/AuthContext';
-import TrackItem from '../components/TrackItem';
+import React from "react";
 
-export default function Library() {
-  const { user, token } = useAuth();
-  const [saved, setSaved] = useState([]);
-
-  useEffect(() => {
-    if (user) {
-      supabase
-        .from('saved_tracks')
-        .select('track_data')
-        .eq('user_id', user.id)
-        .then(({ data }) => setSaved(data.map(d => d.track_data)));
-    }
-  }, [user]);
-
+export default function Library(){
   return (
-    <div className="p-6">
-      <h2 className="text-white text-2xl mb-4">Your Saved Tracks</h2>
-      {saved.map(track => (
-        <TrackItem key={track.id} track={track} />
-      ))}
+    <div>
+      <h2 className="text-2xl font-semibold mb-4">Your Library</h2>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {Array.from({length:6}).map((_,i)=>(
+          <div key={i} className="p-4 bg-white/4 rounded-md">
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 bg-gray-800 rounded-sm overflow-hidden">
+                <img src={`https://picsum.photos/200/200?random=${i+20}`} className="w-full h-full object-cover"/>
+              </div>
+              <div>
+                <div className="font-semibold">Playlist {i+1}</div>
+                <div className="text-xs text-white/60">By you</div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
