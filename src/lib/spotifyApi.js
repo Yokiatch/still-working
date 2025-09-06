@@ -84,17 +84,65 @@ export async function getPlaylistTracks(playlistId, limit = 100) {
   return data.items;
 }
 
-export async function getFeaturedPlaylists() {
-  const data = await call('/browse/featured-playlists?country=from_token&limit=20');
-  return data.playlists.items;
+// FIXED: Remove the invalid country parameter
+export async function getFeaturedPlaylists(limit = 20) {
+  try {
+    const data = await call(`/browse/featured-playlists?limit=${limit}`);
+    return data.playlists.items;
+  } catch (error) {
+    console.warn('Featured playlists not available:', error.message);
+    return [];
+  }
 }
 
-export async function getUserTopTracks() {
-  const data = await call('/me/top/tracks');
-  return data.items;
+export async function getUserTopTracks(limit = 20) {
+  try {
+    const data = await call(`/me/top/tracks?limit=${limit}`);
+    return data.items;
+  } catch (error) {
+    console.warn('Top tracks not available:', error.message);
+    return [];
+  }
 }
 
-export async function getRecentlyPlayed() {
-  const data = await call('/me/player/recently-played');
-  return data.items.map(i => i.track);
+export async function getRecentlyPlayed(limit = 20) {
+  try {
+    const data = await call(`/me/player/recently-played?limit=${limit}`);
+    return data.items.map(i => i.track);
+  } catch (error) {
+    console.warn('Recently played not available:', error.message);
+    return [];
+  }
+}
+
+// NEW: Add some alternative data sources that are more likely to work
+export async function getNewReleases(limit = 20) {
+  try {
+    const data = await call(`/browse/new-releases?limit=${limit}`);
+    return data.albums.items;
+  } catch (error) {
+    console.warn('New releases not available:', error.message);
+    return [];
+  }
+}
+
+export async function getCategories(limit = 20) {
+  try {
+    const data = await call(`/browse/categories?limit=${limit}`);
+    return data.categories.items;
+  } catch (error) {
+    console.warn('Categories not available:', error.message);
+    return [];
+  }
+}
+
+// Get user's saved albums
+export async function getUserSavedAlbums(limit = 20) {
+  try {
+    const data = await call(`/me/albums?limit=${limit}`);
+    return data.items.map(i => i.album);
+  } catch (error) {
+    console.warn('Saved albums not available:', error.message);
+    return [];
+  }
 }

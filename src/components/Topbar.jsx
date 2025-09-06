@@ -1,15 +1,25 @@
 import React from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+import { useAuth } from "../contexts/AuthContext";
 
-export default function Topbar({title, subtitle}) {
+export default function Topbar() {
+  const { session } = useAuth();
+  
   return (
-    <div className="flex items-center justify-between py-4">
-      <div>
-        <h1 className="text-3xl font-bold">{title}</h1>
-        {subtitle && <p className="text-sm text-white/70 mt-1">{subtitle}</p>}
+    <div className="topbar">
+      <div className="nav-buttons">
+        <button className="nav-button">
+          <ChevronLeft size={20} />
+        </button>
+        <button className="nav-button">
+          <ChevronRight size={20} />
+        </button>
       </div>
-      <div className="flex items-center gap-3">
-        <button className="px-3 py-1 rounded-full border border-white/8 text-sm">Upgrade</button>
-        <div className="w-9 h-9 rounded-full bg-white/6"></div>
+      
+      <div className="user-menu">
+        <div className="user-avatar">
+          {session?.user?.email?.[0]?.toUpperCase() || 'U'}
+        </div>
       </div>
     </div>
   );

@@ -1,15 +1,35 @@
 import React from "react";
+import { Play } from "lucide-react";
+import { play } from "../lib/spotifyApi";
+import useSpotifyPlayer from "../hooks/useSpotifyPlayer";
 
-export default function AlbumCard({title, subtitle, img, onClick}) {
+export default function AlbumCard({ name, artist, img, uri }) {
+  const { deviceId, isReady } = useSpotifyPlayer();
+
+  const handlePlay = async () => {
+    if (!isReady || !deviceId || !uri) {
+      console.warn("Player not ready or no URI provided");
+      return;
+    }
+
+    try {
+      await play({ 
+        device_id: deviceId, 
+        uris: [uri] 
+      });
+    } catch (error) {
+      console.error("Failed to play:", error);
+    }
+  };
+
   return (
-    <div onClick={onClick} className="p-3 rounded-md hover:scale-[1.03] transition-transform cursor-pointer bg-gradient-to-b from-transparent to-black/20">
-      <div className="w-full aspect-square rounded-md overflow-hidden mb-3 bg-gray-800">
-        <img src={img} alt={title} className="w-full h-full object-cover"/>
-      </div>
-      <div>
-        <div className="text-sm font-semibold truncate">{title}</div>
-        <div className="text-xs text-white/60 mt-1 truncate">{subtitle}</div>
-      </div>
+    <div className="album-card">
+      <img src={img} alt={name} className="album-image" />
+      <div className="album-title">{name}</div>
+      <div className="album-artist">{artist}</div>
+      <button className="play-button" onClick={handlePlay}>
+        <Play size={20} fill="currentColor" />
+      </button>
     </div>
   );
 }
