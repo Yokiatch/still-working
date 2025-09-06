@@ -32,9 +32,11 @@ export default function App() {
         setLoading(true);
         setError(null);
         
+        console.log('Loading Spotify data...');
+        
         // Load data with individual error handling
         const results = await Promise.allSettled([
-          getUserPlaylists(20),
+          getUserPlaylists(50), // Increased limit for more playlists
           getFeaturedPlaylists(20),
           getRecentlyPlayed(20),
           getUserTopTracks(20),
@@ -42,9 +44,12 @@ export default function App() {
           getUserSavedAlbums(20)
         ]);
 
-        // Process results
+        // Process results with better error handling
         if (results[0].status === 'fulfilled') {
+          console.log('User playlists loaded:', results[0].value);
           setUserPlaylists(results[0].value || []);
+        } else {
+          console.error('Failed to load user playlists:', results[0].reason);
         }
         
         if (results[1].status === 'fulfilled') {
@@ -108,17 +113,19 @@ export default function App() {
 
   const formatPlaylistForCard = (playlist) => ({
     name: playlist.name,
-    artist: playlist.description || 'Playlist',
+    artist: playlist.description || `${playlist.tracks?.total || 0} songs`,
     img: playlist.images[0]?.url || 'https://via.placeholder.com/300',
     uri: playlist.uri
   });
 
   return (
     <div className="spotify-app">
-      {/* Sidebar */}
-      <div className="spotify-sidebar">
-        <Sidebar playlists={userPlaylists} />
-      </div>
+      {/* Sidebar with playlists and loading state */}
+      <Sidebar 
+        playlists={userPlaylists} 
+        loading={loading}
+        error={error}
+      />
 
       {/* Main Content */}
       <div className="spotify-main">
@@ -131,9 +138,27 @@ export default function App() {
           </div>
 
           {error && (
-            <div className="content-section">
-              <div className="error-message" style={{ color: '#ff6b6b', padding: '20px', background: 'rgba(255, 107, 107, 0.1)', borderRadius: '8px', marginBottom: '32px' }}>
+            <div className="error-banner bg-red-900/20 border border-red-500/50 rounded-lg p-4 mb-6">
+              <p className="text-red-400">
                 Failed to load some Spotify data: {error}
+              </p>
+            </div>
+          )}
+
+          {/* User Playlists Section */}
+          {userPlaylists.length > 0 && (
+            <div className="content-section">
+              <div className="section-header">
+                <h2 className="section-title">Your Playlists</h2>
+                <a href="#" className="show-all-link">Show all</a>
+              </div>
+              <div className="card-grid">
+                {userPlaylists.slice(0, 6).map((playlist, i) => (
+                  <AlbumCard 
+                    key={playlist.id || i}
+                    {...formatPlaylistForCard(playlist)}
+                  />
+                ))}
               </div>
             </div>
           )}
@@ -148,7 +173,7 @@ export default function App() {
               <div className="card-grid">
                 {recentlyPlayed.slice(0, 6).map((track, i) => (
                   <AlbumCard 
-                    key={`recent-${i}`}
+                    key={track.id || i}
                     {...formatTrackForCard(track)}
                   />
                 ))}
@@ -166,7 +191,7 @@ export default function App() {
               <div className="card-grid">
                 {topTracks.slice(0, 6).map((track, i) => (
                   <AlbumCard 
-                    key={`top-${i}`}
+                    key={track.id || i}
                     {...formatTrackForCard(track)}
                   />
                 ))}
@@ -184,7 +209,7 @@ export default function App() {
               <div className="card-grid">
                 {newReleases.slice(0, 6).map((album, i) => (
                   <AlbumCard 
-                    key={`new-${i}`}
+                    key={album.id || i}
                     {...formatAlbumForCard(album)}
                   />
                 ))}
@@ -202,7 +227,7 @@ export default function App() {
               <div className="card-grid">
                 {savedAlbums.slice(0, 6).map((album, i) => (
                   <AlbumCard 
-                    key={`saved-${i}`}
+                    key={album.id || i}
                     {...formatAlbumForCard(album)}
                   />
                 ))}
@@ -220,7 +245,7 @@ export default function App() {
               <div className="card-grid">
                 {featuredPlaylists.slice(0, 6).map((playlist, i) => (
                   <AlbumCard 
-                    key={`featured-${i}`}
+                    key={playlist.id || i}
                     {...formatPlaylistForCard(playlist)}
                   />
                 ))}
@@ -237,7 +262,9 @@ export default function App() {
               <div className="card-grid">
                 {Array.from({length: 6}).map((_, i) => (
                   <div key={i} className="loading-card">
-                    <div style={{height: '180px', background: 'var(--bg-tinted)', borderRadius: '8px'}}></div>
+                    <div className="w-full aspect-square bg-bg-elevated rounded-lg mb-4"></div>
+                    <div className="h-4 bg-bg-elevated rounded mb-2"></div>
+                    <div className="h-3 bg-bg-elevated rounded w-3/4"></div>
                   </div>
                 ))}
               </div>
@@ -246,26 +273,25 @@ export default function App() {
 
           {/* Empty state */}
           {!loading && !error && 
+           userPlaylists.length === 0 && 
            recentlyPlayed.length === 0 && 
            topTracks.length === 0 && 
            newReleases.length === 0 && 
            savedAlbums.length === 0 && (
             <div className="content-section">
-              <div className="section-header">
-                <h2 className="section-title">Start exploring music!</h2>
+              <div className="text-center py-16">
+                <h2 className="section-title mb-4">Start exploring music!</h2>
+                <p className="text-text-secondary mb-8">
+                  Play some music on Spotify to see your personalized recommendations here.
+                </p>
               </div>
-              <p style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '40px' }}>
-                Play some music on Spotify to see your personalized recommendations here.
-              </p>
             </div>
           )}
         </div>
       </div>
 
       {/* Player */}
-      <div className="spotify-player">
-        <Player />
-      </div>
+      <Player />
     </div>
   );
 }
