@@ -11,6 +11,10 @@ export default function AlbumCard({ name, artist, img, uri }) {
       console.warn("Player not ready or no URI provided");
       return;
     }
+    if (!deviceId) {
+    console.log('No device ID available');
+    return;
+  }
 
     try {
       await play({ 
