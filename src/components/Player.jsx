@@ -1,110 +1,140 @@
-// src/components/Player.jsx
-import React, { useEffect, useState } from 'react';
-import useSpotifyPlayer from '../hooks/useSpotifyPlayer';
-import { Play, Pause, SkipBack, SkipForward, Volume2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react'
 
-function format(ms = 0) {
-  const s = Math.floor(ms / 1000);
-  const m = Math.floor(s / 60);
-  const sec = s % 60;
-  return `${m}:${sec < 10 ? '0' : ''}${sec}`;
-}
-
-export default function Player() {
-  const {
-    deviceId,
-    isReady,
-    state,
-    play,
-    pause,
-    next,
-    previous,
-    setVolume,
-    transferPlayback,
-  } = useSpotifyPlayer();
-
-  const [localVolume, setLocalVolume] = useState(0.5);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [position, setPosition] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const currentTrack = state?.track_window?.current_track;
+const Player = ({
+  playerState,
+  onPlay,
+  onPause,
+  onNext,
+  onPrevious,
+  isReady,
+  isPremium
+}) => {
+  const [progress, setProgress] = useState(0)
 
   useEffect(() => {
-    setIsPlaying(state ? !state.paused : false);
-    setPosition(state?.position || 0);
-    setDuration(state?.duration || 0);
-  }, [state]);
-
-  useEffect(() => {
-    // Make sure the web player device is active; if device exists, transfer playback to it (non-destructive)
-    if (deviceId && isReady) {
-      transferPlayback(deviceId, false).catch(() => {});
+    if (playerState) {
+      const progressPercent = (playerState.position / playerState.duration) * 100
+      setProgress(progressPercent)
     }
-  }, [deviceId, isReady, transferPlayback]);
+  }, [playerState])
 
-  const togglePlay = async () => {
-    try {
-      if (isPlaying) {
-        await pause();
-      } else {
-        await play(); // resume current context
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  };
+  const formatTime = (ms) => {
+    const minutes = Math.floor(ms / 60000)
+    const seconds = Math.floor((ms % 60000) / 1000)
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`
+  }
 
-  const onVolume = async (e) => {
-    const v = Number(e.target.value);
-    setLocalVolume(v);
-    try {
-      await setVolume(v);
-    } catch (e) {
-      console.error(e);
-    }
-  };
+  const currentTrack = playerState?.track_window?.current_track
+  const isPlaying = playerState && !playerState.paused
+
+  if (!isReady) {
+    return (
+      <div className="fixed bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-700 px-6 py-4">
+        <div className="flex items-center justify-center">
+          <div className="text-gray-400 text-sm">
+            Player initializing...
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
-    <div className="w-full h-24 bg-[#181818] border-t border-gray-800 flex items-center justify-between px-4 text-white">
-      <div className="flex items-center gap-4 w-1/4">
-        <div className="w-14 h-14 bg-gray-900 rounded overflow-hidden">
-          {currentTrack?.album?.images?.[0] ? (
-            <img src={currentTrack.album.images[0].url} alt="" className="w-full h-full object-cover" />
-          ) : null}
+    <div className="fixed bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-700 px-6 py-4">
+      <div className="flex items-center justify-between">
+        {/* Current Track Info */}
+        <div className="flex items-center space-x-4 flex-1">
+          {currentTrack ? (
+            <>
+              {currentTrack.album?.images?. (
+                <img
+                  src={currentTrack.album.images.url}
+                  alt={currentTrack.name}
+                  className="w-12 h-12 rounded"
+                />
+              )}
+              <div className="min-w-0">
+                <h4 className="font-semibold truncate">{currentTrack.name}</h4>
+                <p className="text-sm text-gray-400 truncate">
+                  {currentTrack.artists?.map(artist => artist.name).join(', ')}
+                </p>
+              </div>
+            </>
+          ) : (
+            <div className="text-gray-400 text-sm">
+              {isPremium ? 'No track selected' : 'Premium required for playback'}
+            </div>
+          )}
         </div>
-        <div className="truncate">
-          <div className="font-medium truncate">{currentTrack?.name || 'Not Playing'}</div>
-          <div className="text-xs text-white/60 truncate">
-            {currentTrack?.artists?.map(a => a.name).join(', ') || ''}
+
+        {/* Player Controls */}
+        <div className="flex flex-col items-center space-y-2 flex-1">
+          <div className="flex items-center space-x-4">
+            <button
+              onClick={onPrevious}
+              disabled={!isPremium || !currentTrack}
+              className="p-2 rounded-full hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/>
+              </svg>
+            </button>
+
+            <button
+              onClick={isPlaying ? onPause : onPlay}
+              disabled={!isPremium}
+              className="p-3 bg-white text-black rounded-full hover:bg-gray-200 disabled:bg-gray-600 disabled:cursor-not-allowed transition"
+            >
+              {isPlaying ? (
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M6 4h4v16H6zM14 4h4v16h-4z"/>
+                </svg>
+              ) : (
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M8 5v14l11-7z"/>
+                </svg>
+              )}
+            </button>
+
+            <button
+              onClick={onNext}
+              disabled={!isPremium || !currentTrack}
+              className="p-2 rounded-full hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/>
+              </svg>
+            </button>
           </div>
-        </div>
-      </div>
 
-      <div className="flex flex-col items-center gap-2 w-2/4">
-        <div className="flex items-center gap-6">
-          <button onClick={previous}><SkipBack size={20} /></button>
-          <button onClick={togglePlay} className="w-10 h-10 flex items-center justify-center bg-white text-black rounded-full">
-            {isPlaying ? <Pause size={18} /> : <Play size={18} />}
-          </button>
-          <button onClick={next}><SkipForward size={20} /></button>
+          {/* Progress Bar */}
+          {currentTrack && playerState && (
+            <div className="flex items-center space-x-2 w-full max-w-md">
+              <span className="text-xs text-gray-400">
+                {formatTime(playerState.position)}
+              </span>
+              <div className="flex-1 bg-gray-600 rounded-full h-1">
+                <div
+                  className="bg-green-500 h-1 rounded-full transition-all"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+              <span className="text-xs text-gray-400">
+                {formatTime(playerState.duration)}
+              </span>
+            </div>
+          )}
         </div>
 
-        <div className="flex items-center gap-2 w-full mt-1">
-          <div className="text-xs text-white/60">{format(position)}</div>
-          <div className="relative flex-1 h-1 bg-gray-700 rounded">
-            <div
-              className="absolute top-0 left-0 h-1 bg-[#1DB954] rounded"
-              style={{ width: duration ? `${(position / duration) * 100}%` : '0%' }}
-            />
-          </div>
-          <div className="text-xs text-white/60">{format(duration)}</div>
+        {/* Volume & Device Info */}
+        <div className="flex items-center justify-end space-x-4 flex-1">
+          {isPremium === false && (
+            <div className="text-xs text-yellow-400">Premium Required</div>
+          )}
         </div>
-      </div>
-
-      <div className="flex items-center gap-3 w-1/4 justify-end">
-        <Volume2 size={18} />
-        <input type="range" min={0} max={1} step={0.01} value={localVolume} onChange={onVolume} className="w-28" />
       </div>
     </div>
-  );
+  )
 }
+
+export default Player

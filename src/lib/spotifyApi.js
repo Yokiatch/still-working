@@ -1,148 +1,167 @@
-// src/lib/spotifyApi.js
-import { getSpotifyToken } from './spotifyAuth';
+const SPOTIFY_API_BASE = 'https://api.spotify.com/v1'
 
-const BASE = 'https://api.spotify.com/v1';
+class SpotifyApiError extends Error {
+  constructor(message, status, code) {
+    super(message)
+    this.status = status
+    this.code = code
+  }
+}
 
-async function call(endpoint, opts = {}) {
-  const token = await getSpotifyToken();
-  if (!token) throw new Error('No Spotify token available');
-  const res = await fetch(`${BASE}${endpoint}`, {
+const makeSpotifyRequest = async (endpoint, options = {}, getFreshToken) => {
+  let token
+  
+  try {
+    token = await getFreshToken()
+  } catch (error) {
+    throw new SpotifyApiError('Failed to get Spotify token', 401, 'TOKEN_ERROR')
+  }
+
+  const url = `${SPOTIFY_API_BASE}${endpoint}`
+  const config = {
     headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json'
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      ...options.headers
     },
-    ...opts,
-  });
-  if (res.status === 204) return null; // no content
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`Spotify API ${res.status} ${text}`);
+    ...options
   }
-  return res.json();
-}
 
-export async function transferPlayback(device_id, play = true) {
-  return call('/me/player', {
-    method: 'PUT',
-    body: JSON.stringify({ device_ids: [device_id], play }),
-  });
-}
-
-export async function play({ device_id, uris, context_uri, position_ms = 0, offset = 0 } = {}) {
-  const qs = device_id ? `?device_id=${encodeURIComponent(device_id)}` : '';
-  const body = {};
-  if (uris) body.uris = Array.isArray(uris) ? uris : [uris];
-  if (context_uri) body.context_uri = context_uri;
-  if (position_ms) body.position_ms = position_ms;
-  if (offset) body.offset = typeof offset === 'number' ? { position: offset } : offset;
-  return call(`/me/player/play${qs}`, {
-    method: 'PUT',
-    body: JSON.stringify(body),
-  });
-}
-
-export async function pause(device_id) {
-  const qs = device_id ? `?device_id=${encodeURIComponent(device_id)}` : '';
-  return call(`/me/player/pause${qs}`, { method: 'PUT' });
-}
-
-export async function next(device_id) {
-  const qs = device_id ? `?device_id=${encodeURIComponent(device_id)}` : '';
-  return call(`/me/player/next${qs}`, { method: 'POST' });
-}
-
-export async function previous(device_id) {
-  const qs = device_id ? `?device_id=${encodeURIComponent(device_id)}` : '';
-  return call(`/me/player/previous${qs}`, { method: 'POST' });
-}
-
-export async function seek(position_ms, device_id) {
-  const qs = device_id ? `?position_ms=${position_ms}&device_id=${encodeURIComponent(device_id)}` : `?position_ms=${position_ms}`;
-  return call(`/me/player/seek${qs}`, { method: 'PUT' });
-}
-
-export async function setVolume(volume, device_id) {
-  // volume between 0-100 (Spotify API)
-  const vol = Math.round(Math.min(100, Math.max(0, volume * 100)));
-  const qs = device_id ? `?volume_percent=${vol}&device_id=${encodeURIComponent(device_id)}` : `?volume_percent=${vol}`;
-  return call(`/me/player/volume${qs}`, { method: 'PUT' });
-}
-
-export async function searchTracks(q, limit = 20) {
-  const qs = `/search?q=${encodeURIComponent(q)}&type=track&limit=${limit}`;
-  const data = await call(qs);
-  return data.tracks.items;
-}
-
-export async function getUserPlaylists(limit = 30) {
-  const data = await call(`/me/playlists?limit=${limit}`);
-  return data.items;
-}
-
-export async function getPlaylistTracks(playlistId, limit = 100) {
-  const data = await call(`/playlists/${playlistId}/tracks?limit=${limit}`);
-  return data.items;
-}
-
-// FIXED: Remove the invalid country parameter
-export async function getFeaturedPlaylists(limit = 20) {
   try {
-    const data = await call(`/browse/featured-playlists?limit=${limit}`);
-    return data.playlists.items;
+    const response = await fetch(url, config)
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}))
+      
+      switch (response.status) {
+        case 401:
+          throw new SpotifyApiError('Unauthorized - please re-login', 401, 'UNAUTHORIZED')
+        case 403:
+          if (errorData.error?.reason === 'PREMIUM_REQUIRED') {
+            throw new SpotifyApiError('Spotify Premium required for playback', 403, 'PREMIUM_REQUIRED')
+          }
+          throw new SpotifyApiError('Forbidden - insufficient permissions', 403, 'FORBIDDEN')
+        case 429:
+          const retryAfter = response.headers.get('Retry-After') || 1
+          throw new SpotifyApiError(`Rate limited. Try again in ${retryAfter} seconds`, 429, 'RATE_LIMITED', { retryAfter })
+        case 404:
+          throw new SpotifyApiError('Resource not found', 404, 'NOT_FOUND')
+        default:
+          throw new SpotifyApiError(
+            errorData.error?.message || `HTTP ${response.status}`,
+            response.status,
+            'API_ERROR'
+          )
+      }
+    }
+
+    return response.json()
   } catch (error) {
-    console.warn('Featured playlists not available:', error.message);
-    return [];
+    if (error instanceof SpotifyApiError) {
+      throw error
+    }
+    throw new SpotifyApiError('Network error', 0, 'NETWORK_ERROR')
   }
 }
 
-export async function getUserTopTracks(limit = 20) {
-  try {
-    const data = await call(`/me/top/tracks?limit=${limit}`);
-    return data.items;
-  } catch (error) {
-    console.warn('Top tracks not available:', error.message);
-    return [];
+export class SpotifyApi {
+  constructor(getFreshToken) {
+    this.getFreshToken = getFreshToken
   }
-}
 
-export async function getRecentlyPlayed(limit = 20) {
-  try {
-    const data = await call(`/me/player/recently-played?limit=${limit}`);
-    return data.items.map(i => i.track);
-  } catch (error) {
-    console.warn('Recently played not available:', error.message);
-    return [];
+  async getCurrentUser() {
+    return makeSpotifyRequest('/me', {}, this.getFreshToken)
   }
-}
 
-// NEW: Add some alternative data sources that are more likely to work
-export async function getNewReleases(limit = 20) {
-  try {
-    const data = await call(`/browse/new-releases?limit=${limit}`);
-    return data.albums.items;
-  } catch (error) {
-    console.warn('New releases not available:', error.message);
-    return [];
+  async search(query, type = 'track', limit = 20, offset = 0) {
+    const params = new URLSearchParams({
+      q: query,
+      type,
+      limit: limit.toString(),
+      offset: offset.toString()
+    })
+    
+    return makeSpotifyRequest(`/search?${params}`, {}, this.getFreshToken)
   }
-}
 
-export async function getCategories(limit = 20) {
-  try {
-    const data = await call(`/browse/categories?limit=${limit}`);
-    return data.categories.items;
-  } catch (error) {
-    console.warn('Categories not available:', error.message);
-    return [];
+  async getUserPlaylists(limit = 20, offset = 0) {
+    const params = new URLSearchParams({
+      limit: limit.toString(),
+      offset: offset.toString()
+    })
+    
+    return makeSpotifyRequest(`/me/playlists?${params}`, {}, this.getFreshToken)
   }
-}
 
-// Get user's saved albums
-export async function getUserSavedAlbums(limit = 20) {
-  try {
-    const data = await call(`/me/albums?limit=${limit}`);
-    return data.items.map(i => i.album);
-  } catch (error) {
-    console.warn('Saved albums not available:', error.message);
-    return [];
+  async getPlaylist(playlistId) {
+    return makeSpotifyRequest(`/playlists/${playlistId}`, {}, this.getFreshToken)
+  }
+
+  async getUserSavedTracks(limit = 20, offset = 0) {
+    const params = new URLSearchParams({
+      limit: limit.toString(),
+      offset: offset.toString()
+    })
+    
+    return makeSpotifyRequest(`/me/tracks?${params}`, {}, this.getFreshToken)
+  }
+
+  async getRecommendations(seedTracks = [], seedArtists = [], seedGenres = [], limit = 20) {
+    const params = new URLSearchParams({
+      limit: limit.toString()
+    })
+    
+    if (seedTracks.length) params.append('seed_tracks', seedTracks.join(','))
+    if (seedArtists.length) params.append('seed_artists', seedArtists.join(','))
+    if (seedGenres.length) params.append('seed_genres', seedGenres.join(','))
+    
+    return makeSpotifyRequest(`/recommendations?${params}`, {}, this.getFreshToken)
+  }
+
+  async getAvailableDevices() {
+    return makeSpotifyRequest('/me/player/devices', {}, this.getFreshToken)
+  }
+
+  async getCurrentPlayback() {
+    return makeSpotifyRequest('/me/player', {}, this.getFreshToken)
+  }
+
+  async transferPlayback(deviceId) {
+    return makeSpotifyRequest('/me/player', {
+      method: 'PUT',
+      body: JSON.stringify({
+        device_ids: [deviceId],
+        play: false
+      })
+    }, this.getFreshToken)
+  }
+
+  async play(deviceId, uris = null, contextUri = null) {
+    const body = { device_id: deviceId }
+    if (uris) body.uris = uris
+    if (contextUri) body.context_uri = contextUri
+
+    return makeSpotifyRequest('/me/player/play', {
+      method: 'PUT',
+      body: JSON.stringify(body)
+    }, this.getFreshToken)
+  }
+
+  async pause() {
+    return makeSpotifyRequest('/me/player/pause', {
+      method: 'PUT'
+    }, this.getFreshToken)
+  }
+
+  async skipToNext() {
+    return makeSpotifyRequest('/me/player/next', {
+      method: 'POST'
+    }, this.getFreshToken)
+  }
+
+  async skipToPrevious() {
+    return makeSpotifyRequest('/me/player/previous', {
+      method: 'POST'
+    }, this.getFreshToken)
   }
 }
